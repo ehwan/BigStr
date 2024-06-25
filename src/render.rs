@@ -16,16 +16,28 @@ pub fn render_char<'a>(font: &Font<'a>, ch: char, line_height: usize) -> Vec<f32
     let image_width = hmetrics.advance_width.ceil() as usize;
     let image_height = (vmetrics.ascent - vmetrics.descent).ceil() as usize;
 
+    println!(
+        "image_width: {}, image_height: {}",
+        image_width, image_height
+    );
+
     let glyph = glyph.positioned(offset);
     let bb = glyph.pixel_bounding_box();
+    println!("bb: {:?}", bb);
     let mut ret = Vec::new();
     ret.resize(image_width * image_height, 0.0f32);
     if let Some(bb) = bb {
         glyph.draw(|x, y, v| {
-            let x = (x as i32 + bb.min.x) as usize;
-            let y = (y as i32 + bb.min.y) as usize;
+            let x = x as i32 + bb.min.x;
+            let y = y as i32 + bb.min.y;
 
-            ret[y * image_width + x] = v;
+            // there are some characters that have big pixel_bounding_box
+            // e.g. underscore '_'
+            if x < 0 || x >= image_width as i32 || y < 0 || y >= image_height as i32 {
+                return;
+            }
+
+            ret[y as usize * image_width + x as usize] = v;
         });
     }
     ret
