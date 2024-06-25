@@ -1,0 +1,15 @@
+[package]
+name = "bigstr"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/ehwan/BigStr"
+description = "A command-line tool to make string BIG"
+categories = ["text-processing", "command-line-utilities"]
+keyword = ["text", "string", "cli", "big"]
+
+[dependencies]
+rusttype = "0.9.3"
+font-loader = "0.11.0"
+clap = { version = "4.5.7", features = ["derive"] }
