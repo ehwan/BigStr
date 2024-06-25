@@ -43,7 +43,7 @@ pub struct Args {
     pub offset: f32,
 
     /// The threshold to determine whether a pixel is foreground or background
-    #[arg(short, long, default_value = "0.5")]
+    #[arg(short, long, default_value = "0.3")]
     pub threshold: f32,
 
     /// The background character
