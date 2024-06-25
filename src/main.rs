@@ -71,7 +71,12 @@ fn main() {
         args.offset,
         args.threshold,
         args.aspect_ratio,
+        Some(args.width),
     );
+    if let Err(ch) = image {
+        panic!("Character '{}' cannot be fit into max_width", ch);
+    }
+    let image = image.unwrap();
 
     let ms: Box<dyn marching::MarchingSquare> = match args.mode.as_str() {
         "round" | "\"round\"" => Box::new(marching::RoundCornerMarchingSquare {
@@ -85,9 +90,10 @@ fn main() {
         _ => panic!("Invalid --mode"),
     };
 
-    let lines = marching::marching_square(&image, size, Some(false), ms.as_ref());
-
-    for line in lines {
-        println!("{}", line);
+    for big_line in image.into_iter() {
+        let lines = marching::marching_square(&big_line, size, Some(false), ms.as_ref());
+        for line in lines {
+            println!("{}", line);
+        }
     }
 }

@@ -1,6 +1,6 @@
 use rusttype::{Font, Scale};
 
-pub fn render_char<'a>(font: &Font<'a>, ch: char, line_height: usize, threshold: f32) -> Vec<bool> {
+pub fn render_char<'a>(font: &Font<'a>, ch: char, line_height: usize) -> Vec<f32> {
     // the ratio height/width of actual rendered character (e.g. the unicode box drawing characters)
     let cursor_aspect_ratio = 2.0;
     let scale = Scale {
@@ -18,21 +18,17 @@ pub fn render_char<'a>(font: &Font<'a>, ch: char, line_height: usize, threshold:
 
     let glyph = glyph.positioned(offset);
     let bb = glyph.pixel_bounding_box();
+    let mut ret = Vec::new();
+    ret.resize(image_width * image_height, 0.0f32);
     if let Some(bb) = bb {
-        let mut ret = Vec::new();
-        ret.resize(image_width * image_height, false);
-
         glyph.draw(|x, y, v| {
             let x = (x as i32 + bb.min.x) as usize;
             let y = (y as i32 + bb.min.y) as usize;
 
-            ret[y * image_width + x] = v > threshold;
+            ret[y * image_width + x] = v;
         });
-
-        ret
-    } else {
-        Vec::new()
     }
+    ret
 }
 
 pub fn render_str<'a, 'b>(
@@ -42,70 +38,87 @@ pub fn render_str<'a, 'b>(
     char_offset_factor: f32,  // the factor to multiply the advance width of each character
     threshold: f32,           // threshold for binarization
     cursor_aspect_ratio: f32, // the ratio height/width of actual rendered character (e.g. the unicode box drawing characters)
-) -> Vec<bool> {
+    max_width: Option<usize>, // the maximum width of the rendered image
+) -> Result<Vec<Vec<bool>>, char> // returns None if there is a single character that cannot be fit into max_width
+{
     // the ratio height/width of actual rendered character (e.g. the unicode box drawing characters)
     let scale = Scale {
         x: line_height as f32 * cursor_aspect_ratio,
         y: line_height as f32,
     };
     let vmetrics = font.v_metrics(scale);
-    let font_offset = rusttype::point(0.0, vmetrics.ascent);
-
     let image_height = (vmetrics.ascent - vmetrics.descent).ceil() as usize;
 
-    let mut image_width: i32 = 0;
-    for ch in s.chars() {
-        let glyph = font.glyph(ch).scaled(scale);
-        let hmetrics = glyph.h_metrics();
+    let mut ret_lines = Vec::new();
 
-        let glyph_width = hmetrics.advance_width.ceil() as i32;
-        let char_offset = (hmetrics.advance_width * char_offset_factor).round() as i32;
-        if image_width == 0 {
-            image_width = glyph_width;
-        } else {
-            image_width += glyph_width + char_offset;
+    // col-major
+    let mut cur_line = Vec::new();
+    for ch in s.chars() {
+        let char_image = render_char(font, ch, line_height);
+        let char_width = char_image.len() / image_height;
+
+        // check this single character exceeds max_width
+        if let Some(max_width) = max_width {
+            if char_width >= max_width {
+                return Err(ch);
+            }
         }
-    }
 
-    let mut image = Vec::new();
-    image.resize(image_height * image_width as usize, 0.0f32);
-
-    let mut cur_width: i32 = 0;
-    for ch in s.chars() {
-        let glyph = font.glyph(ch).scaled(scale);
-        let hmetrics = glyph.h_metrics();
-
-        let char_offset = (hmetrics.advance_width * char_offset_factor).round() as i32;
-
-        let glyph = glyph.positioned(font_offset);
-        let bb = glyph.pixel_bounding_box();
-
-        let x_offset = if cur_width == 0 {
+        // check if this character can be fit into current line
+        let char_offset = (char_width as f32 * char_offset_factor).round() as i32;
+        let x_offset = if cur_line.len() == 0 {
             0
         } else {
-            cur_width + char_offset
+            let x_offset = (cur_line.len() as i32 + char_offset) as usize;
+            if let Some(max_width) = max_width {
+                if x_offset + char_width >= max_width {
+                    // this character cannot be fit into current line
+                    // push the current line to ret_lines
+                    ret_lines.push(cur_line);
+                    cur_line = Vec::new();
+                    0
+                } else {
+                    x_offset
+                }
+            } else {
+                x_offset
+            }
         };
 
-        // skip characters that have no bounding box (e.g. space)
-        if let Some(bb) = bb {
-            glyph.draw(|x, y, v| {
-                let x = (x as i32 + bb.min.x + x_offset) as usize;
-                let y = (y as i32 + bb.min.y) as usize;
+        let mut cols = Vec::new();
+        cols.resize(image_height, 0.0f32);
+        cur_line.resize(x_offset as usize + char_width as usize, cols);
 
-                let old = image[y * image_width as usize + x];
-                let new = 1.0 - (1.0 - old) * (1.0 - v); // alpha blending
-
-                image[y * image_width as usize + x] += new;
-            });
-        }
-
-        let glyph_width = hmetrics.advance_width.ceil() as i32;
-        if cur_width == 0 {
-            cur_width = glyph_width;
-        } else {
-            cur_width += glyph_width + char_offset;
+        for x in 0..char_width {
+            for y in 0..image_height {
+                let v = char_image[y * char_width + x];
+                let v = (1.0 - cur_line[x + x_offset][y]) * (1.0 - v);
+                cur_line[x + x_offset][y] = 1.0 - v;
+            }
         }
     }
+    if cur_line.len() > 0 {
+        ret_lines.push(cur_line);
+    }
 
-    image.iter().copied().map(|v| v > threshold).collect()
+    let mut ret = Vec::new();
+    ret.reserve(ret_lines.len());
+    for big_line in ret_lines.into_iter() {
+        // big_line is a Vec<Vec<f32>>, column-major
+
+        let image_width = big_line.len();
+
+        // flatten the big_line into a Vec<f32>, row-major and binarize
+        let mut flattened = Vec::new();
+        flattened.reserve(image_width * image_height);
+        for y in 0..image_height {
+            for x in 0..image_width {
+                flattened.push(big_line[x][y] > threshold);
+            }
+        }
+
+        ret.push(flattened);
+    }
+
+    Ok(ret)
 }

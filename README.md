@@ -108,6 +108,16 @@ Options:
           
           [default: 2.0]
 
+
+  -w, --width <WIDTH>
+          The maximum width of the rendered image
+          
+          If a single character cannot be fit into this width, the program will panic
+          
+          If the given string exceeds this width, it will be wrapped into multiple lines
+          
+          [default: 80]
+
   -h, --help
           Print help (see a summary with '-h')
 

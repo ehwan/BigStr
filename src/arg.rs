@@ -65,4 +65,12 @@ pub struct Args {
     /// Since we use (mono) character as pixel, the proper aspect ratio should be given to make the image looks good
     #[arg(short, long, default_value = "2.0")]
     pub aspect_ratio: f32,
+
+    /// The maximum width of the rendered image
+    ///
+    /// If a single character cannot be fit into this width, the program will panic
+    ///
+    /// If the given string exceeds this width, it will be wrapped into multiple lines
+    #[arg(short, long, default_value = "80")]
+    pub width: usize,
 }
